@@ -180,11 +180,28 @@ def news_hash(title):
 
 
 def call_llm(news_list):
+    """分批调用，避免单次输出过长被截断"""
     if not LLM_API_KEY:
         return []
 
+    all_results = []
+    BATCH = 12# 每批12条，确保输出不被截断
+
+    for start in range(0, min(len(news_list), 36), BATCH):
+        batch = news_list[start:start + BATCH]
+        results = _call_llm_batch(batch, start)
+        all_results.extend(results)
+
+    return all_results
+
+
+def _call_llm_batch(batch, offset):
+    """分析一批新闻，index 已做偏移校正"""
+    if not batch:
+        return []
+
     news_text = "\n".join(
-        [f"[{i+1}] {n['title'][:110]}" for i, n in enumerate(news_list[:35])]
+        [f"[{i + 1}] {n['title'][:110]}" for i, n in enumerate(batch)]
     )
     user_prompt = f"""以下是从海外抓到的最新新闻。请判断哪些会影响A股，预判涨跌方向。
 
@@ -193,7 +210,7 @@ def call_llm(news_list):
 每条格式：
 {{"index":1,"relevance":3,"sectors":["板块"],"direction":"利好","confidence":"高","summary":"30字内","reason":"25字内"}}
 
-只输出JSON数组。"""
+只输出JSON数组。每条都必须填 reason（25字内说明为什么影响A股）。"""
 
     try:
         payload = json.dumps({
@@ -203,7 +220,7 @@ def call_llm(news_list):
                 {"role": "user", "content": user_prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": 2500,
+            "max_tokens": 3000,
         }).encode("utf-8")
 
         req = urllib.request.Request(
@@ -212,12 +229,28 @@ def call_llm(news_list):
             headers={"Content-Type": "application/json",
                      "Authorization": f"Bearer {LLM_API_KEY}"},
         )
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            content = json.loads(resp.read())["choices"][0]["message"]["content"]
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            raw = json.loads(resp.read())
+        content = raw["choices"][0]["message"]["content"]
+
+        # 兜底：输出被截断时，补齐括号再解析
+        content = content.strip()
+        if not content.endswith("]"):
+            content = content[:content.rfind("]") + 1] if "]" in content else content + "]"
+
         m = re.search(r"\[.*\]", content, re.S)
-        return json.loads(m.group(0)) if m else []
+        results = json.loads(m.group(0)) if m else []
+
+        # 校正 index（批次内编号 → 全局编号）
+        for r in results:
+            idx = r.get("index", 0) - 1 + offset
+            r["index"] = idx + 1
+            # 兜底 reason
+            if not r.get("reason"):
+                r["reason"] = r.get("summary", "")[:25] or "影响A股市场情绪"
+        return results
     except Exception as e:
-        print(f"[warn] LLM: {e}")
+        print(f"[warn] LLM 批次失败: {e}")
         return []
 
 
@@ -274,7 +307,10 @@ def main():
         direction = a.get("direction", "")
         if direction not in ("利好", "利空"):
             continue
-        results.append((rel, idx, direction, sectors, a))
+        reason = (a.get("reason") or "").strip()
+        if not reason:
+            continue
+        results.append((rel, idx, direction, sectors, reason, a))
 
     # 排序：强相关在前，同级利好优先（红球，找机会优先）
     results.sort(key=lambda x: (-x[0], 0 if x[2] == "利好" else 1))
@@ -285,11 +321,11 @@ def main():
 
     lines = [f"<b>海外雷达 → A股预判</b>　<i>{now}</i>"]
 
-    for rel, idx, direction, sectors, a in results[:8]:
+    for rel, idx, direction, sectors, reason, a in results[:8]:
         # A股习惯：红涨绿跌
         ball = "🔴" if direction == "利好" else "🟢"
         conf = a.get("confidence", "中")
-        reason = (a.get("reason") or "")[:25]
+        reason = reason[:25]
         src = fresh[idx]["source"][:10]
         clean_title = clean_headline(fresh[idx]["title"])[:60]
 
