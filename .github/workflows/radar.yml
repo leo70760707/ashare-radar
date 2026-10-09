@@ -7,7 +7,7 @@ on:
 
 jobs:
   scan:
-    name: 扫描海外新闻并推送板块预警
+    name: 扫描海外新闻并推送板块预判
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -28,12 +28,11 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python main.py
 
-      - name: 保存去重记录（下次运行会覆盖，保证去重有效）
+      - name: 保存去重记录
         if: always()
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: 更新去重记录"
+          commit_message: "chore: update dedup state"
           file_pattern: seen.json
