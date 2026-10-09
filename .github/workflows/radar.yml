@@ -33,10 +33,7 @@ jobs:
 
       - name: 保存去重记录（下次运行会覆盖，保证去重有效）
         if: always()
-        uses: actions/commit-and-push@v1
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref_name }}
-          add_and_commit: true
-          commit_message: "chore: 更新去重记录 $(date +'%Y-%m-%d %H:%M')"
+          commit_message: "chore: 更新去重记录"
           file_pattern: seen.json
