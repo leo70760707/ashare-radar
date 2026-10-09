@@ -35,33 +35,28 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek-chat")
 STATE_FILE = "seen.json"
 BEIJING = timezone(timedelta(hours=8))
 
-# ============ 海外新闻源（全部境外可直接访问）============
-# 核心思路：只抓"对中国/全球有实质影响"的题材
+# ============ 海外新闻源（权威媒体直连）============
+# 说明：source 必须是真实媒体名，不是搜索关键词
+# 分两类：① 权威财经媒体直连 ② Google News 按题材聚合（会显示真实媒体名）
 NEWS_SOURCES = [
-    # —— 对华直接相关（最重要）——
-    ("对华制裁", "https://news.google.com/rss/search?q=when:12h+China+sanctions+OR+export+controls+OR+entity+list&hl=en-US&gl=US&ceid=US:en"),
-    ("中美贸易", "https://news.google.com/rss/search?q=when:12h+US+China+trade+tariff+negotiation&hl=en-US&gl=US&ceid=US:en"),
-    ("芯片管制", "https://news.google.com/rss/search?q=when:12h+chip+export+ban+semiconductor+China&hl=en-US&gl=US&ceid=US:en"),
-    # —— 影响大宗商品/通胀 ——
-    ("原油能源", "https://news.google.com/rss/search?q=when:12h+oil+crude+OPEC+production+cut&hl=en-US&gl=US&ceid=US:en"),
-    ("粮食农产品", "https://news.google.com/rss/search?q=when:12h+wheat+corn+grain+export+ban+food+price&hl=en-US&gl=US&ceid=US:en"),
-    ("贵金属", "https://news.google.com/rss/search?q=when:12h+gold+copper+rare+earth+price&hl=en-US&gl=US&ceid=US:en"),
-    # —— 影响A股情绪/流动性 ——
-    ("美联储", "https://news.google.com/rss/search?q=when:12h+Fed+interest+rate+Powell+inflation&hl=en-US&gl=US&ceid=US:en"),
-    ("美元美债", "https://news.google.com/rss/search?q=when:12h+dollar+index+Treasury+yield&hl=en-US&gl=US&ceid=US:en"),
-    # —— 地缘冲突（影响油价/军工/避险）——
-    ("中东局势", "https://news.google.com/rss/search?q=when:12h+Iran+Israel+Middle+East+oil+strait&hl=en-US&gl=US&ceid=US:en"),
-    ("俄乌战事", "https://news.google.com/rss/search?q=when:12h+Russia+Ukraine+grain+weapons&hl=en-US&gl=US&ceid=US:en"),
-    # —— 影响科技供应链 ——
-    ("AI算力", "https://news.google.com/rss/search?q=when:12h+Nvidia+AI+chip+export+China+ban&hl=en-US&gl=US&ceid=US:en"),
-    # —— 疫情/公共卫生（你举的鼠疫案例属于这类）——
-    ("全球疫情", "https://news.google.com/rss/search?q=when:12h+outbreak+plague+epidemic+pandemic+WHO+death&hl=en-US&gl=US&ceid=US:en"),
-    # —— 中国经济相关 ——
-    ("中国经济", "https://news.google.com/rss/search?q=when:12h+China+economy+GDP+yuan+property&hl=en-US&gl=US&ceid=US:en"),
-    # —— 英文媒体直连 ——
-    ("BBC中文", "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml"),
-    ("纽约时报中文", "https://cn.nytimes.com/rss/"),
-    ("德国之声中文", "https://rss.dw.com/rdf/rss-chi-all"),
+    # —— 权威财经媒体直连（已实测可用）——
+    ("彭博社", "https://feeds.bloomberg.com/markets/news.rss", True),
+    ("华尔街日报", "https://feeds.a.dj.com/rss/RSSMarketsMain.xml", True),
+    ("MarketWatch", "https://feeds.content.dowjones.io/public/rss/mw_topstories", True),
+    ("经济学人", "https://www.economist.com/finance-and-economics/rss.xml", True),
+    ("卫报财经", "https://www.theguardian.com/uk/business/rss", True),
+    ("NBC世界", "https://feeds.nbcnews.com/nbcnews/public/world", True),
+    # —— 中文权威媒体 ——
+    ("BBC中文", "https://feeds.bbci.co.uk/zhongwen/simp/rss.xml", True),
+    ("纽约时报中文", "https://cn.nytimes.com/rss/", True),
+    ("德国之声", "https://rss.dw.com/rdf/rss-chi-all", True),
+    # —— Google News 题材聚合（source 显示真实媒体名）——
+    ("综合·对华", "https://news.google.com/rss/search?q=when:12h+China+sanctions+OR+export+controls&hl=en-US&gl=US&ceid=US:en", False),
+    ("综合·贸易", "https://news.google.com/rss/search?q=when:12h+US+China+trade+tariff&hl=en-US&gl=US&ceid=US:en", False),
+    ("综合·芯片", "https://news.google.com/rss/search?q=when:12h+semiconductor+chip+export+ban&hl=en-US&gl=US&ceid=US:en", False),
+    ("综合·能源", "https://news.google.com/rss/search?q=when:12h+oil+crude+OPEC+cut&hl=en-US&gl=US&ceid=US:en", False),
+    ("综合·疫情", "https://news.google.com/rss/search?q=when:12h+outbreak+epidemic+virus+WHO&hl=en-US&gl=US&ceid=US:en", False),
+    ("综合·美联储", "https://news.google.com/rss/search?q=when:12h+Fed+rate+Powell+inflation&hl=en-US&gl=US&ceid=US:en", False),
 ]
 
 # A股板块库（供AI参考）
@@ -116,10 +111,29 @@ summary 不超过 30 字
 reason 不超过 25 字"""
 
 
+def extract_real_source(title, fallback):
+    """Google News 的标题格式是「标题 - 媒体名」，提取真实媒体名"""
+    # 去掉结尾的 " - 媒体名"
+    m = re.search(r"\s-\s([^-]{2,40})$", title)
+    if m:
+        src = m.group(1).strip()
+        if src and not src.isdigit():
+            return src
+    return fallback
+
+
+def clean_headline(title):
+    """去掉标题里的【】和结尾的 - 媒体名"""
+    t = re.sub(r"[【】\[\]]", "", title)
+    t = re.sub(r"\s-\s[A-Za-z][^-]{1,35}$", "", t)
+    return t.strip()
+
+
 def fetch_news():
     """抓取海外新闻"""
     items = []
-    for source, url in NEWS_SOURCES:
+    for entry in NEWS_SOURCES:
+        source, url = entry[0], entry[1]
         try:
             req = urllib.request.Request(
                 url, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
@@ -131,14 +145,12 @@ def fetch_news():
                 if count >= 10:
                     break
                 title = (item.findtext("title") or "").strip()
-                link = (item.findtext("link") or "").strip()
-                pub = (item.findtext("pubDate") or "").strip()
                 if title:
+                    real = extract_real_source(title, source)
+                    # 有真实媒体名时，只显示媒体名；否则显示配置名
                     items.append({
-                        "source": source,
+                        "source": real,
                         "title": title,
-                        "link": link,
-                        "pub": pub,
                     })
                     count += 1
         except Exception as e:
@@ -279,7 +291,7 @@ def main():
         conf = a.get("confidence", "中")
         reason = (a.get("reason") or "")[:25]
         src = fresh[idx]["source"][:10]
-        clean_title = re.sub(r"[【】\[\]]", "", fresh[idx]["title"])[:60]
+        clean_title = clean_headline(fresh[idx]["title"])[:60]
 
         lines.append("")
         lines.append(f"{ball} <b>{'、'.join(sectors)}</b>")
