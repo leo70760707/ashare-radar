@@ -1,8 +1,10 @@
 name: A股雷达 · 每小时海外新闻扫描
 
 on:
-  schedule:
-    - cron: '7 * * * *'
+  # 【已暂停】定时任务改为手动触发，避免持续消耗 DeepSeek 额度
+  # 恢复方式：取消下面两行注释即可
+  # schedule:
+  #   - cron: '7 * * * *'
   workflow_dispatch:
 
 jobs:
